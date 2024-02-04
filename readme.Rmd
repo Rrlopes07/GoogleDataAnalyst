@@ -1,0 +1,345 @@
+---
+title: "Estudo de caso - Bellabeat"
+author: "Raphael Lopes"
+date: "2024-01-31"
+output: github_document
+---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+Estudo de caso abordado, como cumprimento ao pré-requisito para obtenção de certificação
+Google Data Analyst.  
+
+Este caso aborda o caso da Bellabeat - fabricante de produtos de tecnologia voltada
+à saúde feminina. Ela é uma empresa inciando a adoção do data driven, e solicita que
+seja realizada a análise de como consumidores utilizam dispositivos inteligentes que
+não são da companhia - e aplicar o conhecimento obtido a partir desta análise para
+comparar com um dos produtos do portfólio.  
+
+Entre os seus produtos, há o **Time** - um relógio de bem-estar, o qual combina a
+aparência atemporal de um relógio clássico com tecnologia, a fim de rastrear a
+atividade, sono e estresse do usuário. Este produto se conecta ao aplicativo Bellabeat
+para transmitir informações sobre o bem-estar do usuário.
+
+De acordo com a metodologia do Google, a análise de dados compreende seis etapas:  
+
+1. Perguntar
+2. Preparar
+3. Processar
+4. Analisar
+5. Compartilhar
+6. Agir  
+
+Cada um destes processos será abordado nos tópicos a seguir.
+
+## Preparação do ambiente
+### Instalar bibliotecas
+```{r}
+#install.packages("tidyverse", type = 'source')
+```
+### Importar bibliotecas
+```{r}
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(grid)
+```
+
+## Perguntar
+
+As perguntas que fomentam esta análise são:  
+
+- _Quais são algumas tendências no uso de dispositivos inteligentes?_  
+
+- _Como essas tendências podem se aplicar aos clientes da Bellabeat?_  
+
+- _Como essas tendências podem ajudar a influenciar a estratégia de marketing da Bellabeat?_  
+
+Dadas estas perguntas, estabeleceu-se a seguinte declaração de tarefa de negócio: 
+
+**_Como utilizar as informações obtidas para otimizar o marketing do produto time?_**
+
+## Preparar
+
+### Fonte dos dados
+
+Os dados utilizados nesta análise são oriundos do dataset "FitBit Fitness Tracker Data",
+disponível no Kaggle, acessível clicando [aqui](https://www.kaggle.com/datasets/arashnic/fitbit).  
+
+Ele é um projeto CC0, de domínio público - o qual contém registros de condicionamento físico de
+30 usuários do Fitbit. Esses registros incluem informações sobre período de atívidade física,
+frequência cardíaca e monitoramento do sono.  
+
+O tamanho da amostra de 30 indivíduos é considerado um tamanho aceitável. Todavia
+é recomendável em futuras análises aumentar o tamanho da amostra, de forma a aumentar
+a confiabilidade da análise.
+
+Desta fonte de dados foram utilizados cinco arquivos de extensão csv, sendo eles:  
+
+- dailyActivity_merged
+- hourlyCalories_merged
+- hourlyIntensities_merged
+- sleepDay_merged
+- weightLogInfo_merged
+
+### Filtragem
+
+Antes de importar os arquivos para o markdown, foi detectada a necessidade de filtrar valores 
+inconsistentes nos arquivos. Essas removoções são realizadas no tópico Transformação. 
+Das informações removidas, cita-se:  
+
+#### dailyActivity_merged
+- 4 registros de calorias com valor 0;
+- 1 registro de consumo de calorias basal (O consumo calórico também apresentava inconsistência).
+
+### Importando os dados
+```{r}
+daily_activity <- read_csv("data/dailyActivity_merged.csv")
+hourly_calories <- read_csv("data/hourlyCalories_merged.csv")
+hourly_intensities <- read_csv("data/hourlyIntensities_merged.csv")
+sleep_day <- read_csv("data/sleepDay_merged.csv")
+weight_log <- read_csv("data/weightLogInfo_merged.csv")
+```
+### Transformação
+```{r}
+daily_activity <- daily_activity %>%
+  filter(Calories != 0 & SedentaryMinutes != 0)
+```
+#### Obtém dias da semana
+```{r}
+daily_activity <- daily_activity %>%
+  mutate(dayWeek = str_to_sentence(wday(mdy(ActivityDate), label = TRUE)))
+```
+#### Obtém horas
+```{r}
+hourly_calories <- hourly_calories %>%
+  mutate(hours = hour(strptime(ActivityHour, '%m/%d/%Y %H:%M')) %>% as.character())
+```
+#### Obtém se é reporte manual
+```{r}
+weight_log <- weight_log %>%
+  mutate(IsManual = if_else(IsManualReport, "Sim", "Não"))
+```
+
+### Exibe detalhes de cada fonte
+#### daily_activity
+```{r}
+head(daily_activity)
+```
+#### hourly_calories
+```{r}
+head(hourly_calories)
+```
+#### hourly_intensities
+```{r}
+head(hourly_intensities)
+```
+#### sleep_day
+```{r}
+head(sleep_day)
+```
+#### weight_log
+```{r}
+head(weight_log)
+```
+## Processar
+
+Foi verificada necessidade de formatar os campos de data/data e hora dos datasets,
+a fim de viabilizar a análise.
+```{r}
+daily_activity <- daily_activity %>%
+  mutate(ActivityDate = mdy(ActivityDate))
+hourly_calories <- hourly_calories %>%
+  mutate(ActivityHour = mdy_hms(ActivityHour))
+hourly_intensities <- hourly_intensities %>%
+  mutate(ActivityHour = mdy_hms(ActivityHour))
+sleep_day <- sleep_day %>%
+  mutate(SleepDay = mdy_hms(SleepDay))
+weight_log <- weight_log %>%
+  mutate(Date = mdy_hms(Date))
+```
+
+## Analisar
+### Distribuição dos dados e medidas de tendência central
+```{r}
+daily_activity %>% 
+  select(TotalSteps, TotalDistance, LightlyActiveMinutes, FairlyActiveMinutes, VeryActiveMinutes, SedentaryMinutes, Calories) %>%
+  summary()
+```
+1. É notável que a maior parte do uso está concentrado em indivíduos sedentários,
+bem como a maior parte dos usos são feitos em atividades mais leves.  
+2. Poucos usuários realizam atividades pesadas, o que promove uma distorção entre
+o terceiro quadrante e o valor máximo observado.  
+```{r}
+hourly_calories %>% 
+  select(Calories) %>%
+  summary()
+```
+1. O máximo confirma a informação observada no dataset anterior.  
+```{r}
+hourly_intensities %>% 
+  select(TotalIntensity, AverageIntensity) %>%
+  summary()
+```
+1. Essas informações confirmam que a maior parte dos usuários focam em atividades
+leves, com baixo consumo calórico.  
+```{r}
+sleep_day %>% 
+  select(-Id, -SleepDay) %>%
+  summary()
+```
+1. Os dados demonstram que a maior parte dos usuários dormem entre 7 a 8 horas por dia,
+valores considerados bons para a saúde.
+```{r}
+weight_log %>% 
+  select(WeightKg, Fat, BMI) %>%
+  summary()
+```
+1. Os dados indicam valores muito altos de percentual de gordura.
+2. Destaca-se a quantidade de nulos no BMI(Índice de massa corporal em portugês),
+indicando que esta medição não ocorre para indivíduos com percentual de gordura
+inferior a 20%. Isto pode gerar viés quando da análise, sendo recomendável mudar a
+metologia de coleta deste dado.
+3. Em virtude da insuficiência de dados, este dataset será descartado nas fases seguintes.  
+
+## Compartilhar
+### Dias da semana com mais atividades
+```{r}
+days_of_week <- c('Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom')
+```
+```{r}
+ggplot(daily_activity, aes(x = factor(dayWeek, days_of_week), fill = dayWeek)) +
+  geom_bar(stat = 'count', width = 0.4, show.legend = FALSE) +
+  scale_fill_hue(c = 40) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  ggtitle("Distribuição das atividades")
+```
+
+1. Dias úteis são aqueles com tendência de atividade maior por parte dos usuários, quando
+comparados aos finais de semana, em especial de terça à quinta-feira.  
+
+### Queima de caloria por passos
+```{r}
+ggplot(daily_activity, aes(x = TotalSteps, y = Calories)) +
+  geom_jitter() +
+  geom_smooth(method = lm, color = "red", fill="#69b3a2", se=TRUE) + 
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Passos vs calorias",
+       x = "Quantidade de Passos",
+       y = "Calorias")
+```
+
+1. Há uma forte correlação entre a quantidade de passos realizados pelos usuários,
+em comparação a quantidade de calorias utilizadas durante a atividade.  
+
+### Queima de caloria por tempo de uso do aplicativo
+```{r}
+ggplot(daily_activity, aes(x = LightlyActiveMinutes, y = Calories)) +
+  geom_jitter() +
+  geom_smooth(method = lm, color = "red", fill="#69b3a2", se=TRUE) + 
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Tempo de atividade moderada vs calorias",
+       x = "Tempo ativo",
+       y = "Calorias")
+```
+```{r}
+ggplot(daily_activity, aes(x = FairlyActiveMinutes, y = Calories)) +
+  geom_jitter() +
+  geom_smooth(method = lm, color = "red", fill="#69b3a2", se=TRUE) + 
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Tempo de atividade moderada vs calorias",
+       x = "Tempo ativo",
+       y = "Calorias")
+```
+```{r}
+ggplot(daily_activity, aes(x = VeryActiveMinutes, y = Calories)) +
+  geom_jitter() +
+  geom_smooth(method = lm, color = "red", fill="#69b3a2", se=TRUE) + 
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Tempo de atividade intensa vs calorias",
+       x = "Tempo ativo",
+       y = "Calorias")
+```
+
+1. Existe baixa diferença de queima de calorias entre usuários que usam o aplicativo
+para atividades de baixa e moderada intensidade.
+2. Já para usuários que realizam atividades com alta intensidade, a queima calórica
+é mais acentuada.  
+
+### Período sedentário vs calorias
+```{r}
+ggplot(daily_activity, aes(x = SedentaryMinutes, y = Calories)) +
+  geom_jitter() +
+  geom_smooth(method = lm, color = "red", fill="#69b3a2", se=TRUE) + 
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Tempo sedentário vs calorias",
+       x = "Tempo sedentário",
+       y = "Calorias")
+```
+
+1. O período sedentário aparenta influenciar pouco na queima de calorias.  
+
+### Reporte manual vs automatizado
+```{r}
+ggplot(weight_log, aes(x = IsManual, fill = IsManual)) +
+  geom_bar(stat = 'count', width = 0.4, show.legend = FALSE) +
+  scale_fill_hue(c = 40) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  ggtitle("É reporte manual?")
+```
+
+1. A maior parte dos reportes realizados são manuais, o que pode levar os usuários
+a esquerem de preencher as informações, ou preencherem informações imprecisas no
+aplicativo.
+
+## Agir
+
+Dada mensagem de negócio, podem ser estabelecidas as seguintes recomendações:
+
+1. A maior parte dos usuários tendem a ser aqueles que realizam atividade física 
+de baixa intensidade. Campanhas de marketing orientadas a este público tendem a ser
+mais eficazes para atrair novos clientes.  
+
+2. Clientes com atividade física mais intensa tendem a obter melhores resultados.
+Campanhas orientadas a fidelizar, ou oferecer atendimento diferenciado a este público
+pode especializar o produto para este nicho, o qual tende a despender mais recursos
+financeiros em performance.
+
+3. Devem ser promovidas as funcionalidades que utilizam reportes automatizados, dado
+que eles facilitam a vida do usuário e agregam valor ao aplicativo.
+
+4. Podem ser focadas campanhas entre as terças e quintas, visto que possíveis usuários
+estão mais propensos a pesquisarem sobre o tema nestes dias.
+
+5. Os dados relativos à percentual de gordura no momento são insuficientes. Em futuras
+coletas de dados, é necessário rever a metodologia de obtenção, para que a análise 
+não gere viés. Este é um dado fundamental que pode gerar diferencial para a aplicação.
+
+Grato pela atenção!
